@@ -16,3 +16,6 @@ metrics/*.json
 
 # MLFlow
 mlruns/
+
+# Project
+.env

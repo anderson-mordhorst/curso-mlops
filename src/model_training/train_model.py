@@ -13,7 +13,7 @@ from tensorflow.keras.layers import Dense, Dropout
 from tensorflow.keras.models import Sequential
 from tensorflow.keras.optimizers import Adam
 
-from mlflow import log_artifact, set_experiment, start_run, log_params
+from mlflow import log_artifact, search_runs, set_experiment, set_tag, start_run, log_params
 from mlflow.keras import autolog
 
 logger = logging.getLogger("src.model_training.train_model")
@@ -137,7 +137,9 @@ def train_model(train_data: pd.DataFrame, params: dict[str, int | float]) -> Non
     set_experiment("ml_classification")
     autolog()
 
-    with start_run():
+    extra_args = get_dvc_experiment()            
+
+    with start_run(**extra_args):
         log_params(params)
 
         tf.keras.utils.set_random_seed(params.pop("random_seed"))
@@ -181,6 +183,32 @@ def train_model(train_data: pd.DataFrame, params: dict[str, int | float]) -> Non
         metrics_path = "metrics/training.json"
         with open(metrics_path, "w") as f:
             json.dump(metrics, f, indent=2)
+
+def get_dvc_experiment():
+    is_experiment = os.getenv("DVC_EXP_NAMe") is not None
+    extra_args = {}
+
+    if is_experiment:
+        runs = search_runs(
+            experiment_ids=[os.getenv("MLFLOW_EXPERIMENT_ID")],
+            filter_string="tags.dvc_exp = 'True'",
+            order_by=["start_time DESC"],
+        )
+
+        if runs.empty:
+            with start_run() as parent_run:
+                set_tag("dvc_exp", True)
+                parent_run_id = parent_run.info.run_id
+        else:
+            parent_run_id = runs.iloc[0].run_id
+        run_name = os.getenv("DVC_EXP_NAME")
+        extra_args = {
+            "run_name": run_name,
+            "nested": True,
+            "parent_run_id": parent_run_id,
+        }
+        
+    return extra_args
 
 
 def main() -> None:
